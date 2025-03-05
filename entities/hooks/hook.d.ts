@@ -6,6 +6,7 @@ export default interface IHook {
     HookName: string;
     HookDescription?: string;
     HookParameters?: {[key: string]: string};
+    ReturnType?: string;
     ReturnBehavior: ReturnBehaviour;
     TargetType: string;
     Category: string;

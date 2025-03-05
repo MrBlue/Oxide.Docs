@@ -96,7 +96,7 @@ function getHookDescription(hooks: IHook[]) {
 function getHookAlerts(hooks: IHook[]) {
   const output = [];
 
-  if (hooks.some((hook) => hook.HookName.startsWith("I")))
+  if (hooks.some((hook) => hook.HookName.startsWith("IOn")))
   {
     output.push(`
 ::: warning
@@ -148,11 +148,13 @@ function getExamplesMarkdown(hooks: IHook[]) {
   }, [] as IHook[]);
 
   for (const hook of hooks) {
+    let returnType = (hook.ReturnType!=null) ? hook.ReturnType : "void";
     output += `\`\`\`csharp`;
     //TODO: Use proper return type instead of void
-    output += `\nprivate void ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
+    output += `\nprivate ${returnType} ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
     output += `\n{`;
     output += `\n    Puts( "${hook.HookName} works!" );`;
+    if (returnType!="void") output += `\n    return null;`;
     output += `\n}`;
     output += `\n\`\`\`\n`;
   }

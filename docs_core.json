@@ -1,0 +1,1300 @@
+{
+	"Hooks": [
+		{
+			"Type": 0,
+			"Name": "OnFrame",
+			"HookName": "OnFrame",
+			"HookParameters": {
+				"args": "object[]"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "CSharpExtension",
+			"Category": "Server",
+			"HookDescription": "Called each frame",
+			"MethodData": {
+				"MethodName": "OnFrame",
+				"ReturnType": "void",
+				"Arguments": {
+					"delta": "float"
+				}
+			},
+			"CodeAfterInjection": "private void OnFrame(float delta)\r\n{\r\n\tobject[] args = new object[] { delta };\r\n\tforeach (System.Collections.Generic.KeyValuePair<string, Core.Plugins.Plugin> kv in loader.LoadedPlugins)\r\n\t{\r\n\t\tCSharpPlugin plugin = kv.Value as CSharpPlugin;\r\n\t\tif (plugin != null && plugin.HookedOnFrame)\r\n\t\t{\r\n\t\t\tplugin.CallHook(\"OnFrame\", args);\r\n\t\t}\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "Loaded",
+			"HookName": "Loaded",
+			"HookParameters": {},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "CSharpPlugin",
+			"Category": "Server",
+			"HookDescription": "Called when a plugin has finished loading\r\nOther plugins may or may not be present, dependant on load order",
+			"MethodData": {
+				"MethodName": "HandleAddedToManager",
+				"ReturnType": "void",
+				"Arguments": {}
+			},
+			"CodeAfterInjection": "public override void HandleAddedToManager(PluginManager manager)\r\n{\r\n\tbase.HandleAddedToManager(manager);\r\n\r\n\tif (Filename != null)\r\n\t{\r\n\t\tWatcher.AddMapping(Name);\r\n\t}\r\n\r\n\tManager.OnPluginAdded += OnPluginLoaded;\r\n\tManager.OnPluginRemoved += OnPluginUnloaded;\r\n\r\n\tforeach (var member in pluginReferenceMembers)\r\n\t{\r\n\t\tif (member.Value.MemberType == MemberTypes.Property)\r\n\t\t{\r\n\t\t\t((PropertyInfo)member.Value).SetValue(this, manager.GetPlugin(member.Key), null);\r\n\t\t}\r\n\t\telse\r\n\t\t{\r\n\t\t\t((FieldInfo)member.Value).SetValue(this, manager.GetPlugin(member.Key));\r\n\t\t}\r\n\t}\r\n\ttry\r\n\t{\r\n\t\tOnCallHook(\"Loaded\", null);\r\n\t}\r\n\tcatch (Exception ex)\r\n\t{\r\n\t\tInterface.Oxide.LogException($\"Failed to initialize plugin '{Name} v{Version}'\", ex);\r\n\t\tLoader.PluginErrors[Name] = ex.Message;\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "Unload",
+			"HookName": "Unload",
+			"HookParameters": {},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "CSharpPlugin",
+			"Category": "Server",
+			"HookDescription": "Called when a plugin is being unloaded",
+			"MethodData": {
+				"MethodName": "HandleRemovedFromManager",
+				"ReturnType": "void",
+				"Arguments": {
+					"manager": "PluginManager"
+				}
+			},
+			"CodeAfterInjection": "public override void HandleRemovedFromManager(PluginManager manager)\r\n{\r\n\tif (IsLoaded)\r\n\t{\r\n\t\tCallHook(\"Unload\", null);\r\n\t}\r\n\r\n\tWatcher.RemoveMapping(Name);\r\n\r\n\tManager.OnPluginAdded -= OnPluginLoaded;\r\n\tManager.OnPluginRemoved -= OnPluginUnloaded;\r\n\r\n\tforeach (var member in pluginReferenceMembers)\r\n\t{\r\n\t\tif (member.Value.MemberType == MemberTypes.Property)\r\n\t\t{\r\n\t\t\t((PropertyInfo)member.Value).SetValue(this, null, null);\r\n\t\t}\r\n\t\telse\r\n\t\t{\r\n\t\t\t((FieldInfo)member.Value).SetValue(this, null);\r\n\t\t}\r\n\t}\r\n\r\n\tbase.HandleRemovedFromManager(manager);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPermissionRegistered",
+			"HookName": "OnPermissionRegistered",
+			"HookParameters": {
+				"name": "string",
+				"owner": "Plugin"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a permission has been registered",
+			"MethodData": {
+				"MethodName": "RegisterPermission",
+				"ReturnType": "void",
+				"Arguments": {
+					"permission": "permission",
+					"owner": "Plugin"
+				}
+			},
+			"CodeAfterInjection": "public void RegisterPermission(c permission, Plugin owner)\r\n{\r\n\tif (string.IsNullOrEmpty(permission))\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\tif (PermissionExists(permission))\r\n\t{\r\n\t\tInterface.Oxide.LogWarning(\"Duplicate permission registered '{0}' (by plugin '{1}')\", permission, owner.Title);\r\n\t\treturn;\r\n\t}\r\n\tif (!registeredPermissions.TryGetValue(owner, out HashSet<string> set))\r\n\t{\r\n\t\tset = new HashSet<string>(StringComparer.OrdinalIgnoreCase);\r\n\t\tregisteredPermissions.Add(owner, set);\r\n\t\towner.OnRemovedFromManager.Add(owner_OnRemovedFromManager);\r\n\t}\r\n\tset.Add(permission);\r\n\tInterface.CallHook(\"OnPermissionRegistered\", permission, owner);\r\n\tif (!permission.StartsWith($\"{owner.Name}.\", StringComparison.OrdinalIgnoreCase) && !owner.IsCorePlugin)\r\n\t{\r\n\t\tInterface.Oxide.LogWarning(\"Missing plugin name prefix '{0}' for permission '{1}' (by plugin '{2}')\", owner.Name.ToLower(), permission, owner.Title);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserNameUpdated",
+			"HookName": "OnUserNameUpdated",
+			"HookParameters": {
+				"playerId": "string",
+				"oldName": "string",
+				"newName": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a player's stored nickname has been changed",
+			"MethodData": {
+				"MethodName": "UpdateNickname",
+				"ReturnType": "void",
+				"Arguments": {
+					"playerId": "string",
+					"playerName": "string"
+				}
+			},
+			"CodeAfterInjection": "public void UpdateNickname(string playerId, string playerName)\r\n{\r\n\tif (UserExists(playerId))\r\n\t{\r\n\t\tUserData userData = GetUserData(playerId);\r\n\t\tstring oldName = userData.LastSeenNickname;\r\n\t\tstring newName = playerName.Sanitize();\r\n\t\tuserData.LastSeenNickname = playerName.Sanitize();\r\n\r\n\t\tInterface.CallHook(\"OnUserNameUpdated\", playerId, oldName, newName);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnGroupCreated",
+			"HookName": "OnGroupCreated",
+			"HookParameters": {
+				"name": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a group has been created successfully",
+			"MethodData": {
+				"MethodName": "CreateGroup",
+				"ReturnType": "bool",
+				"Arguments": {
+					"groupName": "string",
+					"groupTitle": "string",
+					"groupRank": "int"
+				}
+			},
+			"CodeAfterInjection": "public bool CreateGroup(string groupName, string groupTitle, int groupRank)\r\n{\r\n\t// Check if it already exists\r\n\tif (GroupExists(groupName) || string.IsNullOrEmpty(groupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\t// Create the data\r\n\tGroupData groupData = new GroupData { Title = groupTitle, Rank = groupRank };\r\n\t// Add the group\r\n\tgroupsData.Add(groupName, groupData);\r\n\tInterface.CallHook(\"OnGroupCreated\", groupName, groupTitle, groupRank);\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnGroupDeleted",
+			"HookName": "OnGroupDeleted",
+			"HookParameters": {
+				"name": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a group has been deleted successfully",
+			"MethodData": {
+				"MethodName": "RemoveGroup",
+				"ReturnType": "bool",
+				"Arguments": {
+					"groupName": "string"
+				}
+			},
+			"CodeAfterInjection": "public bool RemoveGroup(string groupName)\r\n{\r\n\t// Check if it even exists\r\n\tif (!GroupExists(groupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\t// Remove the group\r\n\tbool removed = groupsData.Remove(groupName);\r\n\tif (removed)\r\n\t{\r\n\t\t// Set children to having no parent group\r\n\t\tforeach (GroupData child in groupsData.Values.Where(g => g.ParentGroup == groupName))\r\n\t\t{\r\n\t\t\tchild.ParentGroup = string.Empty;\r\n\t\t}\r\n\t}\r\n\t// Remove group from users\r\n\tbool changed = usersData.Values.Aggregate(false, (current, userData) => current | userData.Groups.Remove(groupName));\r\n\tif (changed)\r\n\t{\r\n\t\tSaveUsers();\r\n\t}\r\n\tif (removed)\r\n\t{\r\n\t\tInterface.CallHook(\"OnGroupDeleted\", groupName);\r\n\t}\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnGroupTitleSet",
+			"HookName": "OnGroupTitleSet",
+			"HookParameters": {
+				"name": "string",
+				"title": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a group title has been updated",
+			"MethodData": {
+				"MethodName": "SetGroupTitle",
+				"ReturnType": "bool",
+				"Arguments": {
+					"groupName": "string",
+					"groupTitle": "string"
+				}
+			},
+			"CodeAfterInjection": "public bool SetGroupTitle(string groupName, string groupTitle)\r\n{\r\n\tif (!GroupExists(groupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// First, get the group data\r\n\tif (!groupsData.TryGetValue(groupName, out GroupData groupData))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// Change the title\r\n\tif (groupData.Title == groupTitle)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\tgroupData.Title = groupTitle;\r\n\r\n\tInterface.CallHook(\"OnGroupTitleSet\", groupName, groupTitle);\r\n\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnGroupRankSet",
+			"HookName": "OnGroupRankSet",
+			"HookParameters": {
+				"name": "string",
+				"title": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a group title has been updated",
+			"MethodData": {
+				"MethodName": "SetGroupRank",
+				"ReturnType": "bool",
+				"Arguments": {
+					"groupName": "string",
+					"groupRank": "int"
+				}
+			},
+			"CodeAfterInjection": "public bool SetGroupRank(string groupName, int groupRank)\r\n{\r\n\tif (!GroupExists(groupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// First, get the group data\r\n\tif (!groupsData.TryGetValue(groupName, out GroupData groupData))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// Change the rank\r\n\tif (groupData.Rank == groupRank)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\tgroupData.Rank = groupRank;\r\n\r\n\tInterface.CallHook(\"OnGroupRankSet\", groupName, groupRank);\r\n\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnGroupParentSet",
+			"HookName": "OnGroupParentSet",
+			"HookParameters": {
+				"name": "string",
+				"parent": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Permission",
+			"Category": "Permission",
+			"HookDescription": "Called when a group parent has been updated",
+			"MethodData": {
+				"MethodName": "SetGroupParent",
+				"ReturnType": "bool",
+				"Arguments": {
+					"groupName": "string",
+					"parentGroupName": "string"
+				}
+			},
+			"CodeAfterInjection": "public bool SetGroupParent(string groupName, string parentGroupName)\r\n{\r\n\tif (!GroupExists(groupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// First, get the group data\r\n\tif (!groupsData.TryGetValue(groupName, out GroupData groupData))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\tif (string.IsNullOrEmpty(parentGroupName))\r\n\t{\r\n\t\tgroupData.ParentGroup = null;\r\n\t\treturn true;\r\n\t}\r\n\r\n\tif (!GroupExists(parentGroupName) || groupName.Equals(parentGroupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\tif (!string.IsNullOrEmpty(groupData.ParentGroup) && groupData.ParentGroup.Equals(parentGroupName))\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\tif (HasCircularParent(groupName, parentGroupName))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// Change the parent group\r\n\tgroupData.ParentGroup = parentGroupName;\r\n\r\n\tInterface.CallHook(\"OnGroupParentSet\", groupName, parentGroupName);\r\n\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPluginLoaded",
+			"HookName": "OnPluginLoaded",
+			"HookParameters": {
+				"plugin": "Plugin"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "OxideMod",
+			"Category": "Server",
+			"HookDescription": "Called when any plugin has been loaded.  Not to be confused with Loaded",
+			"MethodData": {
+				"MethodName": "PluginLoaded",
+				"ReturnType": "bool",
+				"Arguments": {
+					"plugin": "Plugin"
+				}
+			},
+			"CodeAfterInjection": "public bool PluginLoaded(Plugin plugin)\r\n{\r\n\tplugin.OnError += plugin_OnError;\r\n\ttry\r\n\t{\r\n\t\tplugin.Loader?.PluginErrors.Remove(plugin.Name);\r\n\t\tRootPluginManager.AddPlugin(plugin);\r\n\t\tif (plugin.Loader != null)\r\n\t\t{\r\n\t\t\tif (plugin.Loader.PluginErrors.ContainsKey(plugin.Name))\r\n\t\t\t{\r\n\t\t\t\tUnloadPlugin(plugin.Name);\r\n\t\t\t\treturn false;\r\n\t\t\t}\r\n\t\t}\r\n\t\tplugin.IsLoaded = true;\r\n\t\tCallHook(\"OnPluginLoaded\", plugin);\r\n\t\tLogInfo(\"Loaded plugin {0} v{1} by {2}\", plugin.Title, plugin.Version, plugin.Author);\r\n\t\treturn true;\r\n\t}\r\n\tcatch (Exception ex)\r\n\t{\r\n\t\tif (plugin.Loader != null)\r\n\t\t{\r\n\t\t\tplugin.Loader.PluginErrors[plugin.Name] = ex.Message;\r\n\t\t}\r\n\r\n\t\tLogException($\"Could not initialize plugin '{plugin.Name} v{plugin.Version}'\", ex);\r\n\t\treturn false;\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPluginUnloaded",
+			"HookName": "OnPluginUnloaded",
+			"HookParameters": {
+				"plugin": "Plugin"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "OxideMod",
+			"Category": "Server",
+			"HookDescription": "Called when any plugin has been unloaded. Not to be confused with Unload",
+			"MethodData": {
+				"MethodName": " UnloadPlugin()",
+				"ReturnType": "bool",
+				"Arguments": {
+					"name": "string"
+				}
+			},
+			"CodeAfterInjection": "public bool UnloadPlugin(string name)\r\n{\r\n\t// Get the plugin\r\n\tPlugin plugin = RootPluginManager.GetPlugin(name);\r\n\tif (plugin == null || (plugin.IsCorePlugin && !IsShuttingDown))\r\n\t{\r\n\t\treturn false;\r\n\t}\r\n\r\n\t// Let the plugin loader know that this plugin is being unloaded\r\n\tPluginLoader loader = extensionManager.GetPluginLoaders().SingleOrDefault(l => l.LoadedPlugins.ContainsKey(name));\r\n\tloader?.Unloading(plugin);\r\n\r\n\t// Unload it\r\n\tRootPluginManager.RemovePlugin(plugin);\r\n\r\n\t// Let other plugins know that this plugin has been unloaded\r\n\tif (plugin.IsLoaded)\r\n\t{\r\n\t\tCallHook(\"OnPluginUnloaded\", plugin);\r\n\t}\r\n\r\n\tplugin.IsLoaded = false;\r\n\r\n\tLogInfo(\"Unloaded plugin {0} v{1} by {2}\", plugin.Title, plugin.Version, plugin.Author);\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "Init",
+			"HookName": "Init",
+			"HookParameters": {},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "CSPlugin",
+			"Category": "Server",
+			"HookDescription": "Called when a plugin is being initialized.\r\n Other plugins may or may not be present, dependant on load order",
+			"MethodData": {
+				"MethodName": "HandleAddedToManager",
+				"ReturnType": "void",
+				"Arguments": {
+					"manager": "PluginManager"
+				}
+			},
+			"CodeAfterInjection": "public override void HandleAddedToManager(PluginManager manager)\r\n{\r\n\t// Let base work\r\n\tbase.HandleAddedToManager(manager);\r\n\r\n\t// Subscribe us\r\n\tforeach (string hookname in Hooks.Keys)\r\n\t{\r\n\t\tSubscribe(hookname);\r\n\t}\r\n\r\n\ttry\r\n\t{\r\n\t\t// Let the plugin know that it is loading\r\n\t\tOnCallHook(\"Init\", null);\r\n\t}\r\n\tcatch (Exception ex)\r\n\t{\r\n\t\tInterface.Oxide.LogException($\"Failed to initialize plugin '{Name} v{Version}'\", ex);\r\n\t\tif (Loader != null)\r\n\t\t{\r\n\t\t\tLoader.PluginErrors[Name] = ex.Message;\r\n\t\t}\r\n\t}\r\n\t//---"
+		},
+		{
+			"Type": 0,
+			"Name": "LoadDefaultConfig",
+			"HookName": "LoadDefaultConfig",
+			"HookParameters": {},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Plugin",
+			"Category": "Server",
+			"HookDescription": "Called when the config for a plugin should be initialized.\r\n Only called if the config file does not already exist",
+			"MethodData": {
+				"MethodName": "LoadDefaultConfig",
+				"ReturnType": "void",
+				"Arguments": {}
+			},
+			"CodeAfterInjection": "protected virtual void LoadDefaultConfig() => CallHook(\"LoadDefaultConfig\", null);"
+		},
+		{
+			"Type": 0,
+			"Name": "LoadDefaultMessages",
+			"HookName": "LoadDefaultMessages",
+			"HookParameters": {},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "Plugin",
+			"Category": "Server",
+			"HookDescription": "Called when the localization for a plugin should be registered",
+			"MethodData": {
+				"MethodName": "LoadDefaultMessages",
+				"ReturnType": "void",
+				"Arguments": {}
+			},
+			"CodeAfterInjection": "protected virtual void LoadDefaultMessages() => CallHook(\"LoadDefaultMessages\", null);"
+		},
+		{
+			"Type": 0,
+			"Name": "OnRconCommand",
+			"HookName": "OnRconCommand",
+			"HookParameters": {
+				"UserEndPoint": "IPEndPoint",
+				"command": "string",
+				"args": "string[]"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RemoteConsole",
+			"Category": "Server",
+			"HookDescription": "Called when a rcon command is received",
+			"MethodData": {
+				"MethodName": "OnMessage",
+				"ReturnType": "void",
+				"Arguments": {
+					"event": "MessageEventArgs",
+					"connection": "WebSocketContext"
+				}
+			},
+			"CodeAfterInjection": "private void OnMessage(MessageEventArgs e, WebSocketContext connection)\r\n{\r\n\tif (covalence == null)\r\n\t{\r\n\t\tInterface.Oxide.LogError(\"[Rcon] Failed to process command, Covalence is null\");\r\n\t\treturn;\r\n\t}\r\n\tRemoteMessage message = RemoteMessage.GetMessage(e.Data);\r\n\tif (message == null)\r\n\t{\r\n\t\tInterface.Oxide.LogError(\"[Rcon] Failed to process command, RemoteMessage is null\");\r\n\t\treturn;\r\n\t}\r\n\tif (string.IsNullOrEmpty(message.Message))\r\n\t{\r\n\t\tInterface.Oxide.LogError(\"[Rcon] Failed to process command, RemoteMessage.Text is not set\");\r\n\t\treturn;\r\n\t}\r\n\tstring[] fullCommand = CommandLine.Split(message.Message);\r\n\tstring command = fullCommand[0].ToLower();\r\n\tstring[] args = fullCommand.Skip(1).ToArray();\r\n\tif (Interface.CallHook(\"OnRconCommand\", connection.UserEndPoint, command, args) != null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\tcovalence.Server.Command(command, args);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnMessagePlayer",
+			"HookName": "OnMessagePlayer",
+			"HookParameters": {
+				"formatted": "string",
+				"player": "BasePlayer",
+				"userId": "ulong"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "Player",
+			"Category": "Server",
+			"HookDescription": "Called when a message is sent to a player",
+			"MethodData": {
+				"MethodName": "Message",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"message": "string",
+					"prefix": "string",
+					"userId": "ulong",
+					"params": "object[] args"
+				}
+			},
+			"CodeAfterInjection": "public void Message(BasePlayer player, string message, string prefix, ulong userId = 0, params object[] args)\r\n{\r\n\tif (string.IsNullOrEmpty(message))\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\tmessage = args.Length > 0 ? string.Format(Formatter.ToUnity(message), args) : Formatter.ToUnity(message);\r\n\tstring formatted = prefix != null ? $\"{prefix} {message}\" : message;\r\n\tif (Interface.CallHook(\"OnMessagePlayer\", formatted, player, userId) != null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\tplayer.SendConsoleCommand(\"chat.add\", 2, userId, formatted);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnServerInitialized",
+			"HookName": "OnServerInitialized",
+			"HookParameters": {
+				"serverInitialized": "bool"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "Let plugins know server startup is complete",
+			"MethodData": {
+				"MethodName": "OnPluginLoaded",
+				"ReturnType": "void",
+				"Arguments": {
+					"plugin": "Plugin"
+				}
+			},
+			"CodeAfterInjection": "private void OnPluginLoaded(Plugin plugin)\r\n{\r\n\tif (serverInitialized)\r\n\t{\r\n\t\t// Call OnServerInitialized for hotloaded plugins\r\n\t\tplugin.CallHook(\"OnServerInitialized\", false);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnServerInitialized",
+			"HookName": "OnServerInitialized",
+			"HookParameters": {
+				"serverInitialized": "bool"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "Let plugins know server startup is complete",
+			"MethodData": {
+				"MethodName": "IOnServerInitialized",
+				"ReturnType": "void",
+				"Arguments": {}
+			},
+			"CodeAfterInjection": "private void IOnServerInitialized()\r\n{\r\n\tif (!serverInitialized)\r\n\t{\r\n\t\tAnalytics.Collect();\r\n\r\n\t\tif (!Interface.Oxide.Config.Options.Modded)\r\n\t\t{\r\n\t\t\tInterface.Oxide.LogWarning(\"The server is currently listed under Community. Please be aware that Facepunch only allows admin tools\" +\r\n\t\t\t\t\" (that do not affect gameplay) under the Community section\");\r\n\t\t}\r\n\r\n\t\tserverInitialized = true;\r\n\r\n\t\t// Let plugins know server startup is complete\r\n\t\tInterface.CallHook(\"OnServerInitialized\", serverInitialized);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnServerShutdown",
+			"HookName": "OnServerShutdown",
+			"HookParameters": {},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "Server is shutting down",
+			"MethodData": {
+				"MethodName": "IOnServerShutdown",
+				"ReturnType": "void",
+				"Arguments": {}
+			},
+			"CodeAfterInjection": "private void IOnServerShutdown()\r\n{\r\n\tInterface.Oxide.CallHook(\"OnServerShutdown\");\r\n\tInterface.Oxide.OnShutdown();\r\n\tCovalence.PlayerManager.SavePlayerData();\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "CanUseUI",
+			"HookName": "CanUseUI",
+			"HookParameters": {
+				"player": "BasePlayer",
+				"json": "string"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "CUIHelper",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "AddUi",
+				"ReturnType": "bool",
+				"Arguments": {
+					"player": "BasePlayer",
+					"json": "string"
+				}
+			},
+			"CodeAfterInjection": "public static bool AddUi(BasePlayer player, string json)\r\n{\r\n\tif (player?.net != null && Interface.CallHook(\"CanUseUI\", player, json) == null)\r\n\t{\r\n\t\tCommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player(\"AddUI\", player.net.connection ), json);\r\n\t\treturn true;\r\n\t}\r\n\treturn false;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnDestroyUI",
+			"HookName": "OnDestroyUI",
+			"HookParameters": {
+				"player": "BasePlayer",
+				"elem": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "CUIHelper",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "DestroyUi",
+				"ReturnType": "bool",
+				"Arguments": {
+					"player": "BasePlayer",
+					"elem": "string"
+				}
+			},
+			"CodeAfterInjection": "public static bool DestroyUi(BasePlayer player, string elem)\r\n{\r\n\tif (player?.net != null)\r\n\t{\r\n\t\tInterface.CallHook(\"OnDestroyUI\", player, elem);\r\n\t\tCommunityEntity.ServerInstance.ClientRPC(RpcTarget.Player(\"DestroyUI\", player.net.connection ), elem);\r\n\t\treturn true;\r\n\t}\r\n\r\n\treturn false;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnEntityTakeDamage",
+			"HookName": "OnEntityTakeDamage",
+			"HookParameters": {
+				"entity": "BaseCombatEntity",
+				"hitInfo": "HitInfo"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnBaseCombatEntityHurt",
+				"ReturnType": "object",
+				"Arguments": {
+					"entity": "BaseCombatEntity",
+					"hitInfo": "HitInfo"
+				}
+			},
+			"CodeAfterInjection": "private object IOnBaseCombatEntityHurt(BaseCombatEntity entity, HitInfo hitInfo)\r\n{\r\n\treturn entity is BasePlayer ? null : Interface.CallHook(\"OnEntityTakeDamage\", entity, hitInfo);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnNpcTarget",
+			"HookName": "OnNpcTarget",
+			"HookParameters": {
+				"npc": "BaseNpc",
+				"target": "BaseEntity"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnNpcTarget",
+				"ReturnType": "object",
+				"Arguments": {
+					"npc": "BaseNpc",
+					"target": "BaseEntity"
+				}
+			},
+			"CodeAfterInjection": "private object IOnNpcTarget(BaseNpc npc, BaseEntity target)\r\n{\r\n\tif (Interface.CallHook(\"OnNpcTarget\", npc, target) != null)\r\n\t{\r\n\t\tnpc.SetFact(BaseNpc.Facts.HasEnemy, 0);\r\n\t\tnpc.SetFact(BaseNpc.Facts.EnemyRange, 3);\r\n\t\tnpc.SetFact(BaseNpc.Facts.AfraidRange, 1);\r\n\r\n\t\t//TODO: Find replacements of those:\r\n\t\t// npc.AiContext.EnemyPlayer = null;\r\n\t\t// npc.AiContext.LastEnemyPlayerScore = 0f;\r\n\r\n\t\tnpc.playerTargetDecisionStartTime = 0f;\r\n\t\treturn 0f;\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnEntitySaved",
+			"HookName": "OnEntitySaved",
+			"HookParameters": {
+				"baseNetworkable": "BaseNetworkable",
+				"saveInfo": "BaseNetworkable.SaveInfo"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnEntitySaved",
+				"ReturnType": "void",
+				"Arguments": {
+					"baseNetworkable": "BaseNetworkable",
+					"saveInfo": "BaseNetworkable.SaveInfo"
+				}
+			},
+			"CodeAfterInjection": "private void IOnEntitySaved(BaseNetworkable baseNetworkable, BaseNetworkable.SaveInfo saveInfo)\r\n{\r\n\t// Only call when saving for the network since we don't expect plugins to want to intercept saving to disk\r\n\tif (!serverInitialized || saveInfo.forConnection == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\tInterface.CallHook(\"OnEntitySaved\", baseNetworkable, saveInfo);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnLoseCondition",
+			"HookName": "OnLoseCondition",
+			"HookParameters": {
+				"item": "Item",
+				"amount": "ref float"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Item",
+			"HookDescription": "Called right before the condition of the item is modified",
+			"MethodData": {
+				"MethodName": "IOnLoseCondition",
+				"ReturnType": "object",
+				"Arguments": {
+					"item": "Item",
+					"amount": "float"
+				}
+			},
+			"CodeAfterInjection": "private object IOnLoseCondition(Item item, float amount)\r\n{\r\n\tobject[] arguments = { item, amount };\r\n\tInterface.CallHook(\"OnLoseCondition\", arguments);\r\n\tamount = (float)arguments[1];\r\n\tfloat condition = item.condition;\r\n\titem.condition -= amount;\r\n\tif (item.condition <= 0f && item.condition < condition)\r\n\t{\r\n\t\titem.OnBroken();\r\n\t}\r\n\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "CanPickupEntity",
+			"HookName": "CanPickupEntity",
+			"HookParameters": {
+				"basePlayer": "BasePlayer",
+				"entity": "DoorCloser"
+			},
+			"ReturnType": "bool",
+			"ReturnBehavior": 3,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "Called when a player attempts to pickup a deployed entity (AutoTurret, BaseMountable, BearTrap, DecorDeployable, Door, DoorCloser, ReactiveTarget, SamSite, SleepingBag, SpinnerWheel, StorageContainer, etc.)",
+			"MethodData": {
+				"MethodName": "ICanPickupEntity",
+				"ReturnType": "object",
+				"Arguments": {
+					"basePlayer": "BasePlayer",
+					"entity": "DoorCloser"
+				}
+			},
+			"CodeAfterInjection": "private object ICanPickupEntity(BasePlayer basePlayer, DoorCloser entity)\r\n{\r\n\tobject callHook = Interface.CallHook(\"CanPickupEntity\", basePlayer, entity);\r\n\treturn callHook is bool result && !result ? (object)true : null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnEntityTakeDamage",
+			"HookName": "OnEntityTakeDamage",
+			"HookParameters": {
+				"basePlayer": "BasePlayer",
+				"hitInfo": "HitInfo"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "Alternatively, modify the HitInfo object to change the damage.\r\n It should be okay to set the damage to 0, but if you don't return non-null, the player's client will receive a damage indicator (if entity is a BasePlayer).\r\n HitInfo has all kinds of useful things in it, such as Weapon, damageProperties or damageTypes",
+			"MethodData": {
+				"MethodName": "IOnBasePlayerAttacked",
+				"ReturnType": "object",
+				"Arguments": {
+					"basePlayer": "BasePlayer",
+					"hitInfo": "HitInfo"
+				}
+			},
+			"CodeAfterInjection": "private object IOnBasePlayerAttacked(BasePlayer basePlayer, HitInfo hitInfo)\r\n{\r\n\tif (!serverInitialized || basePlayer == null || hitInfo == null || basePlayer.IsDead() || isPlayerTakingDamage || basePlayer is NPCPlayer)\r\n\t{\r\n\t\treturn null;\r\n\t}\r\n\r\n\tif (Interface.CallHook(\"OnEntityTakeDamage\", basePlayer, hitInfo) != null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\tisPlayerTakingDamage = true;\r\n\ttry\r\n\t{\r\n\t\tbasePlayer.OnAttacked(hitInfo);\r\n\t}\r\n\tfinally\r\n\t{\r\n\t\tisPlayerTakingDamage = false;\r\n\t}\r\n\treturn true;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnEntityTakeDamage",
+			"HookName": "OnEntityTakeDamage",
+			"HookParameters": {
+				"basePlayer": "BasePlayer",
+				"hitInfo": "HitInfo"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnBasePlayerHurt",
+				"ReturnType": "object",
+				"Arguments": {
+					"basePlayer": "BasePlayer",
+					"hitInfo": "HitInfo"
+				}
+			},
+			"CodeAfterInjection": "private object IOnBasePlayerHurt(BasePlayer basePlayer, HitInfo hitInfo)\r\n{\r\n\treturn isPlayerTakingDamage ? null : Interface.CallHook(\"OnEntityTakeDamage\", basePlayer, hitInfo);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerBanned",
+			"HookName": "OnPlayerBanned",
+			"HookParameters": {
+				"playerName": "string",
+				"steamId": "ulong",
+				"Address": "string",
+				"reason": "string",
+				"expiry": "long"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnServerUserSet",
+				"ReturnType": "void",
+				"Arguments": {
+					"steamId": "ulong",
+					"group": "ServerUsers.UserGroup",
+					"playerName": "string",
+					"reason": "string",
+					"expiry": "long"
+				}
+			},
+			"CodeAfterInjection": "private void OnServerUserSet(ulong steamId, ServerUsers.UserGroup group, string playerName, string reason, long expiry)\r\n{\r\n\tif (serverInitialized && group == ServerUsers.UserGroup.Banned)\r\n\t{\r\n\t\tstring playerId = steamId.ToString();\r\n\t\tIPlayer player = Covalence.PlayerManager.FindPlayerById(playerId);\r\n\t\tInterface.CallHook(\"OnPlayerBanned\", playerName, steamId, player?.Address ?? \"0\", reason, expiry);\r\n\t\tInterface.CallHook(\"OnUserBanned\", playerName, playerId, player?.Address ?? \"0\", reason, expiry);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserBanned",
+			"HookName": "OnUserBanned",
+			"HookParameters": {
+				"playerName": "string",
+				"steamId": "string",
+				"Address": "string",
+				"reason": "string",
+				"expiry": "long"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnServerUserSet",
+				"ReturnType": "void",
+				"Arguments": {
+					"steamId": "ulong",
+					"group": "ServerUsers.UserGroup",
+					"playerName": "string",
+					"reason": "string",
+					"expiry": "long"
+				}
+			},
+			"CodeAfterInjection": "private void OnServerUserSet(ulong steamId, ServerUsers.UserGroup group, string playerName, string reason, long expiry)\r\n{\r\n\tif (serverInitialized && group == ServerUsers.UserGroup.Banned)\r\n\t{\r\n\t\tstring playerId = steamId.ToString();\r\n\t\tIPlayer player = Covalence.PlayerManager.FindPlayerById(playerId);\r\n\t\tInterface.CallHook(\"OnPlayerBanned\", playerName, steamId, player?.Address ?? \"0\", reason, expiry);\r\n\t\tInterface.CallHook(\"OnUserBanned\", playerName, playerId, player?.Address ?? \"0\", reason, expiry);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerUnbanned",
+			"HookName": "OnPlayerUnbanned",
+			"HookParameters": {
+				"playerName": "string",
+				"steamId": "ulong",
+				"address": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnServerUserRemove",
+				"ReturnType": "void",
+				"Arguments": {
+					"steamId": "ulong"
+				}
+			},
+			"CodeAfterInjection": "private void OnServerUserRemove(ulong steamId)\r\n{\r\n\tif (serverInitialized && ServerUsers.users.ContainsKey(steamId) && ServerUsers.users[steamId].group == ServerUsers.UserGroup.Banned)\r\n\t{\r\n\t\tstring playerId = steamId.ToString();\r\n\t\tIPlayer player = Covalence.PlayerManager.FindPlayerById(playerId);\r\n\t\tInterface.CallHook(\"OnPlayerUnbanned\", player?.Name ?? \"Unnamed\", steamId, player?.Address ?? \"0\");\r\n\t\tInterface.CallHook(\"OnUserUnbanned\", player?.Name ?? \"Unnamed\", playerId, player?.Address ?? \"0\");\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserUnbanned",
+			"HookName": "OnUserUnbanned",
+			"HookParameters": {
+				"playerName": "string",
+				"steamId": "string",
+				"address": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnServerUserRemove",
+				"ReturnType": "void",
+				"Arguments": {
+					"steamId": "ulong"
+				}
+			},
+			"CodeAfterInjection": "private void OnServerUserRemove(ulong steamId)\r\n{\r\n\tif (serverInitialized && ServerUsers.users.ContainsKey(steamId) && ServerUsers.users[steamId].group == ServerUsers.UserGroup.Banned)\r\n\t{\r\n\t\tstring playerId = steamId.ToString();\r\n\t\tIPlayer player = Covalence.PlayerManager.FindPlayerById(playerId);\r\n\t\tInterface.CallHook(\"OnPlayerUnbanned\", player?.Name ?? \"Unnamed\", steamId, player?.Address ?? \"0\");\r\n\t\tInterface.CallHook(\"OnUserUnbanned\", player?.Name ?? \"Unnamed\", playerId, player?.Address ?? \"0\");\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "CanClientLogin",
+			"HookName": "CanClientLogin",
+			"HookParameters": {
+				"connection": "Connection"
+			},
+			"ReturnType": "bool",
+			"ReturnBehavior": 3,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "Called when a player attempt to login the server",
+			"MethodData": {
+				"MethodName": "IOnUserApprove",
+				"ReturnType": "object",
+				"Arguments": {
+					"connection": "Connection"
+				}
+			},
+			"CodeAfterInjection": "private object IOnUserApprove(Connection connection)\r\n{\r\n\tstring playerName = connection.username;\r\n\tstring connectionId = connection.userid.ToString();\r\n\tstring connectionIp = Regex.Replace(connection.ipaddress, ipPattern, \"\");\r\n\tuint authLevel = connection.authLevel;\r\n\r\n\t// Update name and groups with permissions\r\n\tif (permission.IsLoaded)\r\n\t{\r\n\t\tpermission.UpdateNickname(connectionId, playerName);\r\n\t\tOxideConfig.DefaultGroups defaultGroups = Interface.Oxide.Config.Options.DefaultGroups;\r\n\t\tif (!permission.UserHasGroup(connectionId, defaultGroups.Players))\r\n\t\t{\r\n\t\t\tpermission.AddUserGroup(connectionId, defaultGroups.Players);\r\n\t\t}\r\n\t\tif (authLevel >= 2 && !permission.UserHasGroup(connectionId, defaultGroups.Administrators))\r\n\t\t{\r\n\t\t\tpermission.AddUserGroup(connectionId, defaultGroups.Administrators);\r\n\t\t}\r\n\t}\r\n\r\n\t// Let covalence know\r\n\tCovalence.PlayerManager.PlayerJoin(connection.userid, playerName);\r\n\r\n\t// Call hooks for plugins\r\n\tobject loginSpecific = Interface.CallHook(\"CanClientLogin\", connection);\r\n\tobject loginCovalence = Interface.CallHook(\"CanUserLogin\", playerName, connectionId, connectionIp);\r\n\tobject canLogin = loginSpecific is null ? loginCovalence : loginSpecific;\r\n\tif (canLogin is string || canLogin is bool loginBlocked && !loginBlocked)\r\n\t{\r\n\t\tConnectionAuth.Reject(connection, canLogin is string ? canLogin.ToString() : lang.GetMessage(\"ConnectionRejected\", this, connectionId));\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Call hooks for plugins\r\n\tobject approvedSpecific = Interface.CallHook(\"OnUserApprove\", connection);\r\n\tobject approvedCovalence = Interface.CallHook(\"OnUserApproved\", playerName, connectionId, connectionIp);\r\n\treturn approvedSpecific is null ? approvedCovalence : approvedSpecific;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "CanUserLogin",
+			"HookName": "CanUserLogin",
+			"HookParameters": {
+				"playerName": "string",
+				"connectionId": "string",
+				"connectionIp": "string"
+			},
+			"ReturnType": "bool",
+			"ReturnBehavior": 3,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "Called when a player attempt to login the server",
+			"MethodData": {
+				"MethodName": "IOnUserApprove",
+				"ReturnType": "object",
+				"Arguments": {
+					"connection": "Connection"
+				}
+			},
+			"CodeAfterInjection": "private object IOnUserApprove(Connection connection)\r\n{\r\n\tstring playerName = connection.username;\r\n\tstring connectionId = connection.userid.ToString();\r\n\tstring connectionIp = Regex.Replace(connection.ipaddress, ipPattern, \"\");\r\n\tuint authLevel = connection.authLevel;\r\n\r\n\t// Update name and groups with permissions\r\n\tif (permission.IsLoaded)\r\n\t{\r\n\t\tpermission.UpdateNickname(connectionId, playerName);\r\n\t\tOxideConfig.DefaultGroups defaultGroups = Interface.Oxide.Config.Options.DefaultGroups;\r\n\t\tif (!permission.UserHasGroup(connectionId, defaultGroups.Players))\r\n\t\t{\r\n\t\t\tpermission.AddUserGroup(connectionId, defaultGroups.Players);\r\n\t\t}\r\n\t\tif (authLevel >= 2 && !permission.UserHasGroup(connectionId, defaultGroups.Administrators))\r\n\t\t{\r\n\t\t\tpermission.AddUserGroup(connectionId, defaultGroups.Administrators);\r\n\t\t}\r\n\t}\r\n\r\n\t// Let covalence know\r\n\tCovalence.PlayerManager.PlayerJoin(connection.userid, playerName);\r\n\r\n\t// Call hooks for plugins\r\n\tobject loginSpecific = Interface.CallHook(\"CanClientLogin\", connection);\r\n\tobject loginCovalence = Interface.CallHook(\"CanUserLogin\", playerName, connectionId, connectionIp);\r\n\tobject canLogin = loginSpecific is null ? loginCovalence : loginSpecific;\r\n\tif (canLogin is string || canLogin is bool loginBlocked && !loginBlocked)\r\n\t{\r\n\t\tConnectionAuth.Reject(connection, canLogin is string ? canLogin.ToString() : lang.GetMessage(\"ConnectionRejected\", this, connectionId));\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Call hooks for plugins\r\n\tobject approvedSpecific = Interface.CallHook(\"OnUserApprove\", connection);\r\n\tobject approvedCovalence = Interface.CallHook(\"OnUserApproved\", playerName, connectionId, connectionIp);\r\n\treturn approvedSpecific is null ? approvedCovalence : approvedSpecific;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerBanned",
+			"HookName": "OnPlayerBanned",
+			"HookParameters": {
+				"connection": "Connection",
+				"status": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnPlayerBanned",
+				"ReturnType": "void",
+				"Arguments": {
+					"connection": "Connection",
+					"status": "AuthResponse"
+				}
+			},
+			"CodeAfterInjection": "private void IOnPlayerBanned(Connection connection, AuthResponse status)\r\n{\r\n\t// TODO: Get BasePlayer and pass instead of Connection\r\n\tInterface.CallHook(\"OnPlayerBanned\", connection, status.ToString());\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerOfflineChat",
+			"HookName": "OnPlayerOfflineChat",
+			"HookParameters": {
+				"playerid": "ulong",
+				"playerName": "string",
+				"message": "string",
+				"channel": "Chat.ChatChannel"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "Hook is called when a chat message is sent to an offline player ",
+			"MethodData": {
+				"MethodName": "IOnPlayerChat(ulong playerId, string playerName, string message, Chat.ChatChannel channel, BasePlayer basePlayer)",
+				"ReturnType": "object",
+				"Arguments": {
+					"playerId": "ulong",
+					"playerName": "string",
+					"message": "string",
+					"channel": "Chat.ChatChannel",
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private object IOnPlayerChat(ulong playerId, string playerName, string message, Chat.ChatChannel channel, BasePlayer basePlayer)\r\n{\r\n\t// Ignore empty and \"default\" text\r\n\tif (string.IsNullOrEmpty(message) || message.Equals(\"text\"))\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Check if chat command\r\n\tstring chatCommandPrefix = CommandHandler.GetChatCommandPrefix(message);\r\n\tif ( chatCommandPrefix != null )\r\n\t{\r\n\t\tTryRunPlayerCommand( basePlayer, message, chatCommandPrefix );\r\n\t\treturn false;\r\n\t}\r\n\r\n\tmessage = message.EscapeRichText();\r\n\r\n\t// Check if using Rust+ app\r\n\tif (basePlayer == null || !basePlayer.IsConnected)\r\n\t{\r\n\t\t// Call offline chat hook\r\n\t\treturn Interface.CallHook(\"OnPlayerOfflineChat\", playerId, playerName, message, channel);\r\n\t}\r\n\r\n\t// Call hooks for plugins\r\n\tobject chatSpecific = Interface.CallHook(\"OnPlayerChat\", basePlayer, message, channel);\r\n\tobject chatCovalence = Interface.CallHook(\"OnUserChat\", basePlayer.IPlayer, message);\r\n\treturn chatSpecific is null ? chatCovalence : chatSpecific;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerChat",
+			"HookName": "OnPlayerChat",
+			"HookParameters": {
+				"player": "BasePlayer",
+				"message": "string",
+				"channel": "Chat.ChatChannel"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnPlayerChat(ulong playerId, string playerName, string message, Chat.ChatChannel channel, BasePlayer basePlayer)",
+				"ReturnType": "object",
+				"Arguments": {
+					"playerId": "ulong",
+					"playerName": "string",
+					"message": "string",
+					"channel": "Chat.ChatChannel",
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private object IOnPlayerChat(ulong playerId, string playerName, string message, Chat.ChatChannel channel, BasePlayer basePlayer)\r\n{\r\n\t// Ignore empty and \"default\" text\r\n\tif (string.IsNullOrEmpty(message) || message.Equals(\"text\"))\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Check if chat command\r\n\tstring chatCommandPrefix = CommandHandler.GetChatCommandPrefix(message);\r\n\tif ( chatCommandPrefix != null )\r\n\t{\r\n\t\tTryRunPlayerCommand( basePlayer, message, chatCommandPrefix );\r\n\t\treturn false;\r\n\t}\r\n\r\n\tmessage = message.EscapeRichText();\r\n\r\n\t// Check if using Rust+ app\r\n\tif (basePlayer == null || !basePlayer.IsConnected)\r\n\t{\r\n\t\t// Call offline chat hook\r\n\t\treturn Interface.CallHook(\"OnPlayerOfflineChat\", playerId, playerName, message, channel);\r\n\t}\r\n\r\n\t// Call hooks for plugins\r\n\tobject chatSpecific = Interface.CallHook(\"OnPlayerChat\", basePlayer, message, channel);\r\n\tobject chatCovalence = Interface.CallHook(\"OnUserChat\", basePlayer.IPlayer, message);\r\n\treturn chatSpecific is null ? chatCovalence : chatSpecific;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserChat",
+			"HookName": "OnUserChat",
+			"HookParameters": {
+				"iplayer": "IPlayer",
+				"message": "string"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnPlayerChat(ulong playerId, string playerName, string message, Chat.ChatChannel channel, BasePlayer basePlayer)",
+				"ReturnType": "object",
+				"Arguments": {
+					"playerId": "ulong",
+					"playerName": "string",
+					"message": "string",
+					"channel": "Chat.ChatChannel",
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private object IOnPlayerChat(ulong playerId, string playerName, string message, Chat.ChatChannel channel, BasePlayer basePlayer)\r\n{\r\n\t// Ignore empty and \"default\" text\r\n\tif (string.IsNullOrEmpty(message) || message.Equals(\"text\"))\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Check if chat command\r\n\tstring chatCommandPrefix = CommandHandler.GetChatCommandPrefix(message);\r\n\tif ( chatCommandPrefix != null )\r\n\t{\r\n\t\tTryRunPlayerCommand( basePlayer, message, chatCommandPrefix );\r\n\t\treturn false;\r\n\t}\r\n\r\n\tmessage = message.EscapeRichText();\r\n\r\n\t// Check if using Rust+ app\r\n\tif (basePlayer == null || !basePlayer.IsConnected)\r\n\t{\r\n\t\t// Call offline chat hook\r\n\t\treturn Interface.CallHook(\"OnPlayerOfflineChat\", playerId, playerName, message, channel);\r\n\t}\r\n\r\n\t// Call hooks for plugins\r\n\tobject chatSpecific = Interface.CallHook(\"OnPlayerChat\", basePlayer, message, channel);\r\n\tobject chatCovalence = Interface.CallHook(\"OnUserChat\", basePlayer.IPlayer, message);\r\n\treturn chatSpecific is null ? chatCovalence : chatSpecific;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnApplicationCommand",
+			"HookName": "OnApplicationCommand",
+			"HookParameters": {
+				"player": "BasePlayer",
+				"cmd": "string",
+				"args": "string[]"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "TryRunPlayerCommand",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"message": "string",
+					"commandPrefix": "string"
+				}
+			},
+			"CodeAfterInjection": "private void TryRunPlayerCommand(BasePlayer basePlayer, string message, string commandPrefix)\r\n{\r\n\tif (basePlayer == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\tstring str = message.Replace(\"\\n\", \"\").Replace(\"\\r\", \"\").Trim();\r\n\r\n\t// Check if it is a chat command\r\n\tif (string.IsNullOrEmpty(str))\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Parse the command\r\n\tParseCommand(str.Substring(commandPrefix.Length), out string cmd, out string[] args);\r\n\tif (cmd == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Check if using Rust+ app\r\n\tif (!basePlayer.IsConnected)\r\n\t{\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer, cmd, args);\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer.IPlayer, cmd, args);\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Is the command blocked?\r\n\tobject commandSpecific = Interface.CallHook(\"OnPlayerCommand\", basePlayer, cmd, args);\r\n\tobject commandCovalence = Interface.CallHook(\"OnUserCommand\", basePlayer.IPlayer, cmd, args);\r\n\tobject canBlock = commandSpecific is null ? commandCovalence : commandSpecific;\r\n\tif (canBlock != null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t//---\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnApplicationCommand",
+			"HookName": "OnApplicationCommand",
+			"HookParameters": {
+				"iplayer": "IPlayer",
+				"cmd": "string",
+				"args": "string[]"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "TryRunPlayerCommand",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"message": "string",
+					"commandPrefix": "string"
+				}
+			},
+			"CodeAfterInjection": "private void TryRunPlayerCommand(BasePlayer basePlayer, string message, string commandPrefix)\r\n{\r\n\tif (basePlayer == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\tstring str = message.Replace(\"\\n\", \"\").Replace(\"\\r\", \"\").Trim();\r\n\r\n\t// Check if it is a chat command\r\n\tif (string.IsNullOrEmpty(str))\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Parse the command\r\n\tParseCommand(str.Substring(commandPrefix.Length), out string cmd, out string[] args);\r\n\tif (cmd == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Check if using Rust+ app\r\n\tif (!basePlayer.IsConnected)\r\n\t{\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer, cmd, args);\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer.IPlayer, cmd, args);\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Is the command blocked?\r\n\tobject commandSpecific = Interface.CallHook(\"OnPlayerCommand\", basePlayer, cmd, args);\r\n\tobject commandCovalence = Interface.CallHook(\"OnUserCommand\", basePlayer.IPlayer, cmd, args);\r\n\tobject canBlock = commandSpecific is null ? commandCovalence : commandSpecific;\r\n\tif (canBlock != null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t//---\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerCommand",
+			"HookName": "OnPlayerCommand",
+			"HookParameters": {
+				"player": "BasePlayer",
+				"cmd": "string",
+				"args": "string[]"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "TryRunPlayerCommand",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"message": "string",
+					"commandPrefix": "string"
+				}
+			},
+			"CodeAfterInjection": "private void TryRunPlayerCommand(BasePlayer basePlayer, string message, string commandPrefix)\r\n{\r\n\tif (basePlayer == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\tstring str = message.Replace(\"\\n\", \"\").Replace(\"\\r\", \"\").Trim();\r\n\r\n\t// Check if it is a chat command\r\n\tif (string.IsNullOrEmpty(str))\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Parse the command\r\n\tParseCommand(str.Substring(commandPrefix.Length), out string cmd, out string[] args);\r\n\tif (cmd == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Check if using Rust+ app\r\n\tif (!basePlayer.IsConnected)\r\n\t{\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer, cmd, args);\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer.IPlayer, cmd, args);\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Is the command blocked?\r\n\tobject commandSpecific = Interface.CallHook(\"OnPlayerCommand\", basePlayer, cmd, args);\r\n\tobject commandCovalence = Interface.CallHook(\"OnUserCommand\", basePlayer.IPlayer, cmd, args);\r\n\tobject canBlock = commandSpecific is null ? commandCovalence : commandSpecific;\r\n\tif (canBlock != null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t//---\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserCommand",
+			"HookName": "OnUserCommand",
+			"HookParameters": {
+				"iplayer": "IPlayer",
+				"cmd": "string",
+				"args": "string[]"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "TryRunPlayerCommand",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"message": "string",
+					"commandPrefix": "string"
+				}
+			},
+			"CodeAfterInjection": "private void TryRunPlayerCommand(BasePlayer basePlayer, string message, string commandPrefix)\r\n{\r\n\tif (basePlayer == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\tstring str = message.Replace(\"\\n\", \"\").Replace(\"\\r\", \"\").Trim();\r\n\r\n\t// Check if it is a chat command\r\n\tif (string.IsNullOrEmpty(str))\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Parse the command\r\n\tParseCommand(str.Substring(commandPrefix.Length), out string cmd, out string[] args);\r\n\tif (cmd == null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Check if using Rust+ app\r\n\tif (!basePlayer.IsConnected)\r\n\t{\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer, cmd, args);\r\n\t\tInterface.CallHook(\"OnApplicationCommand\", basePlayer.IPlayer, cmd, args);\r\n\t\treturn;\r\n\t}\r\n\r\n\t// Is the command blocked?\r\n\tobject commandSpecific = Interface.CallHook(\"OnPlayerCommand\", basePlayer, cmd, args);\r\n\tobject commandCovalence = Interface.CallHook(\"OnUserCommand\", basePlayer.IPlayer, cmd, args);\r\n\tobject canBlock = commandSpecific is null ? commandCovalence : commandSpecific;\r\n\tif (canBlock != null)\r\n\t{\r\n\t\treturn;\r\n\t}\r\n\r\n\t//---\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserConnected",
+			"HookName": "OnUserConnected",
+			"HookParameters": {
+				"iplayer": "IPlayer"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnPlayerConnected",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private void IOnPlayerConnected(BasePlayer basePlayer)\r\n{\r\n\t// Set language for player\r\n\tlang.SetLanguage(basePlayer.net.connection.info.GetString(\"global.language\", \"en\"), basePlayer.UserIDString);\r\n\r\n\t// Send CUI to player manually\r\n\tbasePlayer.SendEntitySnapshot(CommunityEntity.ServerInstance);\r\n\r\n\t// Let covalence know\r\n\tCovalence.PlayerManager.PlayerConnected(basePlayer);\r\n\tIPlayer player = Covalence.PlayerManager.FindPlayerById(basePlayer.UserIDString);\r\n\tif (player != null)\r\n\t{\r\n\t\tbasePlayer.IPlayer = player;\r\n\t\tInterface.CallHook(\"OnUserConnected\", player);\r\n\t}\r\n\r\n\tInterface.Oxide.CallHook(\"OnPlayerConnected\", basePlayer);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerConnected",
+			"HookName": "OnPlayerConnected",
+			"HookParameters": {
+				"player": "BasePlayer"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnPlayerConnected",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private void IOnPlayerConnected(BasePlayer basePlayer)\r\n{\r\n\t// Set language for player\r\n\tlang.SetLanguage(basePlayer.net.connection.info.GetString(\"global.language\", \"en\"), basePlayer.UserIDString);\r\n\r\n\t// Send CUI to player manually\r\n\tbasePlayer.SendEntitySnapshot(CommunityEntity.ServerInstance);\r\n\r\n\t// Let covalence know\r\n\tCovalence.PlayerManager.PlayerConnected(basePlayer);\r\n\tIPlayer player = Covalence.PlayerManager.FindPlayerById(basePlayer.UserIDString);\r\n\tif (player != null)\r\n\t{\r\n\t\tbasePlayer.IPlayer = player;\r\n\t\tInterface.CallHook(\"OnUserConnected\", player);\r\n\t}\r\n\r\n\tInterface.Oxide.CallHook(\"OnPlayerConnected\", basePlayer);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserDisconnected",
+			"HookName": "OnUserDisconnected",
+			"HookParameters": {
+				"iplayer": "IPlayer",
+				"reason": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnPlayerDisconnected",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"reason": "string"
+				}
+			},
+			"CodeAfterInjection": "private void OnPlayerDisconnected(BasePlayer basePlayer, string reason)\r\n{\r\n\tIPlayer player = basePlayer.IPlayer;\r\n\tif (player != null)\r\n\t{\r\n\t\tInterface.CallHook(\"OnUserDisconnected\", player, reason);\r\n\t}\r\n\r\n\tCovalence.PlayerManager.PlayerDisconnected(basePlayer);\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerLanguageChanged",
+			"HookName": "OnPlayerLanguageChanged",
+			"HookParameters": {
+				"player": "BasePlayer",
+				"val": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnPlayerSetInfo",
+				"ReturnType": "void",
+				"Arguments": {
+					"connection": "Connection",
+					"key": "string",
+					"val": "string"
+				}
+			},
+			"CodeAfterInjection": "private void OnPlayerSetInfo(Connection connection, string key, string val)\r\n{\r\n\t// Change language for player\r\n\tif (key == \"global.language\")\r\n\t{\r\n\t\tlang.SetLanguage(val, connection.userid.ToString());\r\n\r\n\t\tBasePlayer basePlayer = connection.player as BasePlayer;\r\n\t\tif (basePlayer != null)\r\n\t\t{\r\n\t\t\tInterface.CallHook(\"OnPlayerLanguageChanged\", basePlayer, val);\r\n\t\t\tif (basePlayer.IPlayer != null)\r\n\t\t\t{\r\n\t\t\t\tInterface.CallHook(\"OnPlayerLanguageChanged\", basePlayer.IPlayer, val);\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnPlayerLanguageChanged",
+			"HookName": "OnPlayerLanguageChanged",
+			"HookParameters": {
+				"iplayer": "IPlayer",
+				"val": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnPlayerSetInfo",
+				"ReturnType": "void",
+				"Arguments": {
+					"connection": "Connection",
+					"key": "string",
+					"val": "string"
+				}
+			},
+			"CodeAfterInjection": "private void OnPlayerSetInfo(Connection connection, string key, string val)\r\n{\r\n\t// Change language for player\r\n\tif (key == \"global.language\")\r\n\t{\r\n\t\tlang.SetLanguage(val, connection.userid.ToString());\r\n\r\n\t\tBasePlayer basePlayer = connection.player as BasePlayer;\r\n\t\tif (basePlayer != null)\r\n\t\t{\r\n\t\t\tInterface.CallHook(\"OnPlayerLanguageChanged\", basePlayer, val);\r\n\t\t\tif (basePlayer.IPlayer != null)\r\n\t\t\t{\r\n\t\t\t\tInterface.CallHook(\"OnPlayerLanguageChanged\", basePlayer.IPlayer, val);\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserKicked",
+			"HookName": "OnUserKicked",
+			"HookParameters": {
+				"iplayer": "IPlayer",
+				"reason": "string"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnPlayerKicked",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer",
+					"reason": "string"
+				}
+			},
+			"CodeAfterInjection": "private void OnPlayerKicked(BasePlayer basePlayer, string reason)\r\n{\r\n\tIPlayer player = basePlayer.IPlayer;\r\n\tif (player != null)\r\n\t{\r\n\t\tInterface.CallHook(\"OnUserKicked\", basePlayer.IPlayer, reason);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserRespawn",
+			"HookName": "OnUserRespawn",
+			"HookParameters": {
+				"iplayer": "IPlayer"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "object OnPlayerRespawn",
+				"ReturnType": "object",
+				"Arguments": {
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private object OnPlayerRespawn(BasePlayer basePlayer)\r\n{\r\n\tIPlayer player = basePlayer.IPlayer;\r\n\treturn player != null ? Interface.CallHook(\"OnUserRespawn\", player) : null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnUserRespawned",
+			"HookName": "OnUserRespawned",
+			"HookParameters": {
+				"iplayer": "IPlayer"
+			},
+			"ReturnType": "void",
+			"ReturnBehavior": 0,
+			"TargetType": "RustCore",
+			"Category": "Player",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "OnPlayerRespawned",
+				"ReturnType": "void",
+				"Arguments": {
+					"player": "BasePlayer"
+				}
+			},
+			"CodeAfterInjection": "private void OnPlayerRespawned(BasePlayer basePlayer)\r\n{\r\n\tIPlayer player = basePlayer.IPlayer;\r\n\tif (player != null)\r\n\t{\r\n\t\tInterface.CallHook(\"OnUserRespawned\", player);\r\n\t}\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnRconMessage",
+			"HookName": "OnRconMessage",
+			"HookParameters": {
+				"ipAddress": "IPAddress",
+				"message": "RemoteMessage"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnRconMessage",
+				"ReturnType": "object",
+				"Arguments": {
+					"ipAddress": "IPAddress",
+					"command": "string"
+				}
+			},
+			"CodeAfterInjection": "private object IOnRconMessage(IPAddress ipAddress, string command)\r\n{\r\n\tif (ipAddress != null && !string.IsNullOrEmpty(command))\r\n\t{\r\n\t\tRemoteMessage message = RemoteMessage.GetMessage(command);\r\n\r\n\t\tif (string.IsNullOrEmpty(message?.Message))\r\n\t\t{\r\n\t\t\treturn null;\r\n\t\t}\r\n\r\n\t\tif (Interface.CallHook(\"OnRconMessage\", ipAddress, message) != null)\r\n\t\t{\r\n\t\t\treturn true;\r\n\t\t}\r\n\r\n\t\tstring[] fullCommand = CommandLine.Split(message.Message);\r\n\r\n\t\tif (fullCommand.Length >= 1)\r\n\t\t{\r\n\t\t\tstring cmd = fullCommand[0].ToLower();\r\n\t\t\tstring[] args = fullCommand.Skip(1).ToArray();\r\n\r\n\t\t\tif (Interface.CallHook(\"OnRconCommand\", ipAddress, cmd, args) != null)\r\n\t\t\t{\r\n\t\t\t\treturn true;\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnRconCommand",
+			"HookName": "OnRconCommand",
+			"HookParameters": {
+				"ipAddress": "IPAddress",
+				"message": "string",
+				"arg": "string[]"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnRconMessage",
+				"ReturnType": "object",
+				"Arguments": {
+					"ipAddress": "IPAddress",
+					"command": "string"
+				}
+			},
+			"CodeAfterInjection": "private object IOnRconMessage(IPAddress ipAddress, string command)\r\n{\r\n\tif (ipAddress != null && !string.IsNullOrEmpty(command))\r\n\t{\r\n\t\tRemoteMessage message = RemoteMessage.GetMessage(command);\r\n\r\n\t\tif (string.IsNullOrEmpty(message?.Message))\r\n\t\t{\r\n\t\t\treturn null;\r\n\t\t}\r\n\r\n\t\tif (Interface.CallHook(\"OnRconMessage\", ipAddress, message) != null)\r\n\t\t{\r\n\t\t\treturn true;\r\n\t\t}\r\n\r\n\t\tstring[] fullCommand = CommandLine.Split(message.Message);\r\n\r\n\t\tif (fullCommand.Length >= 1)\r\n\t\t{\r\n\t\t\tstring cmd = fullCommand[0].ToLower();\r\n\t\t\tstring[] args = fullCommand.Skip(1).ToArray();\r\n\r\n\t\t\tif (Interface.CallHook(\"OnRconCommand\", ipAddress, cmd, args) != null)\r\n\t\t\t{\r\n\t\t\t\treturn true;\r\n\t\t\t}\r\n\t\t}\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnServerCommand",
+			"HookName": "OnServerCommand",
+			"HookParameters": {
+				"arg": "ConsoleSystem.Arg"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "object IOnServerCommand(ConsoleSystem.Arg arg)",
+				"ReturnType": "object",
+				"Arguments": {
+					"arg": "ConsoleSystem.Arg"
+				}
+			},
+			"CodeAfterInjection": "private object IOnServerCommand(ConsoleSystem.Arg arg)\r\n{\r\n\t// Ignore invalid connections\r\n\tif (arg == null || arg.Connection != null && arg.Player() == null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Ignore all chat messages\r\n\tif (arg.cmd.FullName == \"chat.say\" || arg.cmd.FullName == \"chat.teamsay\" || arg.cmd.FullName == \"chat.localsay\")\r\n\t{\r\n\t\treturn null;\r\n\t}\r\n\r\n\t// Is the command blocked?\r\n\tobject commandSpecific = Interface.CallHook(\"OnServerCommand\", arg);\r\n\tobject commandCovalence = Interface.CallHook(\"OnServerCommand\", arg.cmd.FullName, RustCommandSystem.ExtractArgs(arg));\r\n\tobject canBlock = commandSpecific is null ? commandCovalence : commandSpecific;\r\n\tif (canBlock != null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnServerCommand",
+			"HookName": "OnServerCommand",
+			"HookParameters": {
+				"cmd": "string",
+				"arg": "string[]"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Server",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "object IOnServerCommand(ConsoleSystem.Arg arg)",
+				"ReturnType": "object",
+				"Arguments": {
+					"arg": "ConsoleSystem.Arg"
+				}
+			},
+			"CodeAfterInjection": "private object IOnServerCommand(ConsoleSystem.Arg arg)\r\n{\r\n\t// Ignore invalid connections\r\n\tif (arg == null || arg.Connection != null && arg.Player() == null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\t// Ignore all chat messages\r\n\tif (arg.cmd.FullName == \"chat.say\" || arg.cmd.FullName == \"chat.teamsay\" || arg.cmd.FullName == \"chat.localsay\")\r\n\t{\r\n\t\treturn null;\r\n\t}\r\n\r\n\t// Is the command blocked?\r\n\tobject commandSpecific = Interface.CallHook(\"OnServerCommand\", arg);\r\n\tobject commandCovalence = Interface.CallHook(\"OnServerCommand\", arg.cmd.FullName, RustCommandSystem.ExtractArgs(arg));\r\n\tobject canBlock = commandSpecific is null ? commandCovalence : commandSpecific;\r\n\tif (canBlock != null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnCupboardAuthorize",
+			"HookName": "OnCupboardAuthorize",
+			"HookParameters": {
+				"privlidge": "BuildingPrivlidge",
+				"player": "BasePlayer"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnCupboardAuthorize",
+				"ReturnType": "object",
+				"Arguments": {
+					"userID": "ulong",
+					"player": "BasePlayer",
+					"privlidge": "BuildingPrivlidge"
+				}
+			},
+			"CodeAfterInjection": "private object IOnCupboardAuthorize(ulong userID, BasePlayer player, BuildingPrivlidge privlidge)\r\n{\r\n\tif (userID == player.userID)\r\n\t{\r\n\t\tif (Interface.CallHook(\"OnCupboardAuthorize\", privlidge, player) != null)\r\n\t\t{\r\n\t\t\treturn true;\r\n\t\t}\r\n\t}\r\n\telse if (Interface.CallHook(\"OnCupboardAssign\", privlidge, userID, player) != null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		},
+		{
+			"Type": 0,
+			"Name": "OnCupboardAssign",
+			"HookName": "OnCupboardAssign",
+			"HookParameters": {
+				"privlidge": "BuildingPrivlidge",
+				"userID": "ulong",
+				"player": "BasePlayer"
+			},
+			"ReturnType": "object",
+			"ReturnBehavior": 1,
+			"TargetType": "RustCore",
+			"Category": "Entity",
+			"HookDescription": "",
+			"MethodData": {
+				"MethodName": "IOnCupboardAuthorize",
+				"ReturnType": "object",
+				"Arguments": {
+					"userID": "ulong",
+					"player": "BasePlayer",
+					"privlidge": "BuildingPrivlidge"
+				}
+			},
+			"CodeAfterInjection": "private object IOnCupboardAuthorize(ulong userID, BasePlayer player, BuildingPrivlidge privlidge)\r\n{\r\n\tif (userID == player.userID)\r\n\t{\r\n\t\tif (Interface.CallHook(\"OnCupboardAuthorize\", privlidge, player) != null)\r\n\t\t{\r\n\t\t\treturn true;\r\n\t\t}\r\n\t}\r\n\telse if (Interface.CallHook(\"OnCupboardAssign\", privlidge, userID, player) != null)\r\n\t{\r\n\t\treturn true;\r\n\t}\r\n\r\n\treturn null;\r\n}"
+		}
+	]
+}
