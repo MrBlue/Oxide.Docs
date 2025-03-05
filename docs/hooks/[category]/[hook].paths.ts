@@ -119,12 +119,11 @@ function getUsageReturn(hookData: IHook) {
   }
 
   if (hookData.ReturnBehavior === ReturnBehaviour.ExitWhenNonNull) {
-    return "* Return a non-null value or bool to override default behavior";
+    return `* Return a non-null value or ${hookData.NeedReturnType ? `**${hookData.NeedReturnType}**` : 'bool'} to override default behavior`;
   }
 
-  //TODO: Get the return type of the hook
   if (hookData.ReturnBehavior === ReturnBehaviour.UseArgumentString) {
-    return "* Return TYPE to prevent default behavior";
+    return `* Return **${hookData.NeedReturnType || 'TYPE'}** to prevent default behavior`;
   }
 
   return "* No return behavior";
@@ -148,13 +147,48 @@ function getExamplesMarkdown(hooks: IHook[]) {
   }, [] as IHook[]);
 
   for (const hook of hooks) {
-    output += `\`\`\`csharp`;
-    //TODO: Use proper return type instead of void
-    output += `\nprivate void ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
-    output += `\n{`;
-    output += `\n    Puts( "${hook.HookName} works!" );`;
-    output += `\n}`;
-    output += `\n\`\`\`\n`;
+    const returnType = hook.NeedReturnType || "object";
+    
+    switch (hook.ReturnBehavior) {
+      case ReturnBehaviour.Continue:
+        output += `\`\`\`csharp`;
+        output += `\nprivate void ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
+        output += `\n{`;
+        output += `\n    Puts( "${hook.HookName} works!" );`;
+        output += `\n}`;
+        output += `\n\`\`\`\n`;
+        break;
+
+      case ReturnBehaviour.ExitWhenValidType:
+        output += `\`\`\`csharp`;
+        output += `\nprivate object ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
+        output += `\n{`;
+        output += `\n    Puts( "${hook.HookName} works!" );`;
+        output += `\n    return false; // Or return null`;
+        output += `\n}`;
+        output += `\n\`\`\`\n`;
+        break;
+
+      case ReturnBehaviour.ExitWhenNonNull:
+        output += `\`\`\`csharp`;
+        output += `\nprivate ${returnType} ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
+        output += `\n{`;
+        output += `\n    Puts( "${hook.HookName} works!" );`;
+        output += `\n    return null;`;
+        output += `\n}`;
+        output += `\n\`\`\`\n`;
+        break;
+
+      case ReturnBehaviour.UseArgumentString:
+        output += `\`\`\`csharp`;
+        output += `\nprivate ${returnType}? ${hook.HookName}( ${getArgumentString(hook.HookParameters)} )`;
+        output += `\n{`;
+        output += `\n    Puts( "${hook.HookName} works!" );`;
+        output += `\n    return ${hook.NeedReturnType ? `default(${hook.NeedReturnType})` : "null"}; // Or return null`;
+        output += `\n}`;
+        output += `\n\`\`\`\n`;
+        break;
+    }
   }
 
   return output;

@@ -8,6 +8,7 @@ export default interface IHook {
     HookParameters?: {[key: string]: string};
     ReturnBehavior: ReturnBehaviour;
     TargetType: string;
+    NeedReturnType?: string;
     Category: string;
     MethodData: {
         MethodName: string;

@@ -8,12 +8,26 @@ export function getHookJson() {
   return hooks.Hooks.filter(hook => hook.Category !== "_Patches" && !hook.HookName.includes("["));
 }
 
+// Get the return type of the hook from the CodeAfterInjection
+function getReturnTypeFromCodeAfterInjection(hook: IHook): string | null {
+  if (!hook.CodeAfterInjection) return null;
+  
+  const code = hook.CodeAfterInjection.replace(/global::/g, '');
+  const typeMatch = /\breturnvar is ([a-zA-Z0-9:\.]+)/.exec(code);
+  if (typeMatch && typeMatch[1]) return typeMatch[1];
+  return null;
+}
+
 export function getGroupedHooks() {
   const hooksJson = getHookJson();
 
   var out = {} as { [key: string]: { [key: string]: IHook[] } };
 
   hooksJson.forEach((hook) => {
+    const returnType = getReturnTypeFromCodeAfterInjection(hook);
+    if (returnType) {
+      hook.NeedReturnType = returnType;
+    }
     if (!out[hook.Category]) {
       out[hook.Category] = {};
     }
